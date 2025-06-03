@@ -93,8 +93,8 @@ figma.ui.onmessage = async (msg: {type: string, count?: number}) => {
               width: node.width,
               height: node.height,
               characters: node.characters,
-              fontSize: node.fontSize,
-              fontName: node.fontName,
+              fontSize: typeof node.fontSize === 'number' ? node.fontSize : 12,
+              fontName: typeof node.fontName === 'object' ? node.fontName : { family: 'Arial', style: 'Regular' },
               textAlignHorizontal: node.textAlignHorizontal,
               textAlignVertical: node.textAlignVertical,
               fills: node.fills as Paint[]

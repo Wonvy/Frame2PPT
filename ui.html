@@ -34,11 +34,17 @@ window.onmessage = async (event) => {
       
       // 设置PPT尺寸比例
       const { width, height } = message.aspectRatio;
-      pptx.layout = {
+      // 将像素转换为英寸（1英寸 = 72像素）
+      const widthInches = width / 72;
+      const heightInches = height / 72;
+      
+      // 设置自定义幻灯片大小
+      pptx.defineLayout({ 
         name: 'CUSTOM',
-        width: width / 72, // 转换为英寸
-        height: height / 72 // 转换为英寸
-      };
+        width: widthInches,
+        height: heightInches
+      });
+      pptx.layout = 'CUSTOM';
       
       // 为每个Frame创建一个幻灯片
       for (const frameData of message.data) {
@@ -67,11 +73,17 @@ window.onmessage = async (event) => {
               }
             : { r: 0, g: 0, b: 0 };
 
+          // 将位置和尺寸从像素转换为英寸
+          const x = textNode.x / 72;
+          const y = textNode.y / 72;
+          const w = textNode.width / 72;
+          const h = textNode.height / 72;
+
           slide.addText(textNode.characters, {
-            x: textNode.x / width,
-            y: textNode.y / height,
-            w: textNode.width / width,
-            h: textNode.height / height,
+            x: x,
+            y: y,
+            w: w,
+            h: h,
             fontSize: textNode.fontSize,
             fontFace: textNode.fontName.family,
             bold: textNode.fontName.style.includes('Bold'),
