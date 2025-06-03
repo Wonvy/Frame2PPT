@@ -1,0 +1,127 @@
+<h2>Rectangle Creator</h2>
+<p>
+  <label for="count">Count:</label>
+  <input id="count" type="number" value="5" placeholder="Enter number of rectangles">
+</p>
+<button id="create">Create</button>
+<button id="export">导出为PPT</button>
+<button id="cancel">Cancel</button>
+<script src="https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+<script>
+
+document.getElementById('create').onclick = () => {
+  const textbox = document.getElementById('count');
+  const count = parseInt(textbox.value, 10);
+  parent.postMessage({ pluginMessage: { type: 'create-shapes', count } }, '*')
+}
+
+document.getElementById('export').onclick = () => {
+  parent.postMessage({ pluginMessage: { type: 'export-to-ppt' } }, '*')
+}
+
+document.getElementById('cancel').onclick = () => {
+  parent.postMessage({ pluginMessage: { type: 'cancel' } }, '*')
+}
+
+// 处理从插件接收到的导出数据
+window.onmessage = async (event) => {
+  const message = event.data.pluginMessage;
+  
+  if (message.type === 'export-data') {
+    try {
+      // @ts-ignore
+      const pptx = new PptxGenJS();
+      
+      // 设置PPT尺寸比例
+      const { width, height } = message.aspectRatio;
+      pptx.layout = {
+        name: 'CUSTOM',
+        width: width / 72, // 转换为英寸
+        height: height / 72 // 转换为英寸
+      };
+      
+      // 为每个Frame创建一个幻灯片
+      for (const frameData of message.data) {
+        const slide = pptx.addSlide();
+        
+        // 将二进制图片数据转换为base64
+        const base64Image = arrayBufferToBase64(frameData.bytes);
+        
+        // 添加背景图片
+        slide.addImage({
+          data: `data:image/png;base64,${base64Image}`,
+          x: 0,
+          y: 0,
+          w: '100%',
+          h: '100%'
+        });
+
+        // 添加文本元素
+        for (const textNode of frameData.textNodes) {
+          // 转换颜色格式
+          const textColor = textNode.fills[0]?.type === 'SOLID' 
+            ? { 
+                r: Math.round(textNode.fills[0].color.r * 255),
+                g: Math.round(textNode.fills[0].color.g * 255),
+                b: Math.round(textNode.fills[0].color.b * 255)
+              }
+            : { r: 0, g: 0, b: 0 };
+
+          slide.addText(textNode.characters, {
+            x: textNode.x / width,
+            y: textNode.y / height,
+            w: textNode.width / width,
+            h: textNode.height / height,
+            fontSize: textNode.fontSize,
+            fontFace: textNode.fontName.family,
+            bold: textNode.fontName.style.includes('Bold'),
+            italic: textNode.fontName.style.includes('Italic'),
+            align: convertTextAlign(textNode.textAlignHorizontal),
+            valign: convertVerticalAlign(textNode.textAlignVertical),
+            color: `${textColor.r},${textColor.g},${textColor.b}`,
+            isTextBox: true
+          });
+        }
+      }
+      
+      // 保存PPT文件
+      await pptx.writeFile('FigmaExport.pptx');
+    } catch (error) {
+      console.error('PPT生成错误:', error);
+      parent.postMessage({ pluginMessage: { type: 'error', message: '生成PPT时出错' } }, '*');
+    }
+  }
+};
+
+// 辅助函数：将ArrayBuffer转换为base64
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+// 辅助函数：转换文本对齐方式
+function convertTextAlign(figmaAlign) {
+  const alignMap = {
+    'LEFT': 'left',
+    'CENTER': 'center',
+    'RIGHT': 'right',
+    'JUSTIFIED': 'justify'
+  };
+  return alignMap[figmaAlign] || 'left';
+}
+
+// 辅助函数：转换垂直对齐方式
+function convertVerticalAlign(figmaAlign) {
+  const alignMap = {
+    'TOP': 'top',
+    'CENTER': 'middle',
+    'BOTTOM': 'bottom'
+  };
+  return alignMap[figmaAlign] || 'top';
+}
+
+</script>
