@@ -341,6 +341,40 @@ async function processNode(node: SceneNode): Promise<void> {
       await processAsShape(node, baseProps);
       return;
     }
+
+    case 'VECTOR': {
+      // 检查是否为箭头（通过名称或属性判断）
+      const isArrow = node.name.toLowerCase().includes('arrow') || 
+                     ('strokeCap' in node && (node.strokeCap === 'ARROW_LINES' || node.strokeCap === 'ARROW_EQUILATERAL'));
+
+      if (isArrow && 'strokes' in node) {
+        // 处理为线条
+        const strokeNode = node as VectorNode;
+        
+        const lineElement: LineElementData = {
+          ...baseProps,
+          type: 'LINE',
+          strokeWeight: typeof strokeNode.strokeWeight === 'number' ? strokeNode.strokeWeight : 1,
+          strokes: Array.isArray(strokeNode.strokes) ? [...strokeNode.strokes] : [],
+          strokeCap: typeof strokeNode.strokeCap === 'string' ? strokeNode.strokeCap as StrokeCap : undefined,
+          strokeJoin: typeof strokeNode.strokeJoin === 'string' ? strokeNode.strokeJoin as StrokeJoin : undefined,
+          dashPattern: strokeNode.dashPattern,
+          startPoint: {
+            x: relativeX,
+            y: relativeY
+          },
+          endPoint: {
+            x: relativeX + node.width,
+            y: relativeY + node.height
+          }
+        };
+        currentElements.push(lineElement);
+        return;
+      }
+      // 如果不是箭头，按照普通形状处理
+      await processAsShape(node, baseProps);
+      return;
+    }
   }
 
   // 处理其他类型的节点

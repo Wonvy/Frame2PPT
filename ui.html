@@ -182,28 +182,16 @@ window.onmessage = async (event) => {
             // 根据形状类型选择对应的PPT形状
             let shapeType = pptx.shapes.RECTANGLE;
             
-            // 根据Figma的形状类型选择对应的PPT形状
-            switch (element.shapeType) {
-              case 'ELLIPSE':
-                shapeType = pptx.shapes.OVAL;
-                break;
-              case 'POLYGON':
-                // 对于多边形，我们使用正八边形作为替代
-                shapeType = pptx.shapes.OCTAGON;
-                break;
-              case 'STAR':
-                shapeType = pptx.shapes.STAR;
-                break;
-              default:
-                // 检查是否为圆形（通过宽高比和cornerRadius判断）
-                if (Math.abs(element.width - element.height) < 1 && (!element.cornerRadius || element.cornerRadius >= element.width / 2)) {
-                  shapeType = pptx.shapes.OVAL;
-                }
-                // 如果有圆角但不是圆形
-                else if (element.cornerRadius) {
-                  shapeOptions.rectRadius = element.cornerRadius / 72; // 转换为英寸
-                }
-                break;
+            if (element.shapeType === 'ELLIPSE') {
+              shapeType = pptx.shapes.OVAL;
+            } else if (element.shapeType === 'POLYGON') {
+              shapeType = pptx.shapes.OCTAGON;
+            } else if (element.shapeType === 'STAR') {
+              shapeType = pptx.shapes.STAR;
+            } else if (Math.abs(element.width - element.height) < 1 && (!element.cornerRadius || element.cornerRadius >= element.width / 2)) {
+              shapeType = pptx.shapes.OVAL;
+            } else if (element.cornerRadius) {
+              shapeOptions.rectRadius = element.cornerRadius / 72;
             }
 
             slide.addShape(shapeType, shapeOptions);
@@ -248,15 +236,10 @@ window.onmessage = async (event) => {
             // 处理线条样式
             let lineStyle = 'solid';
             if (element.dashPattern && element.dashPattern.length > 0) {
-              // 根据虚线模式选择合适的PPT线条样式
               if (element.dashPattern.length === 2) {
-                if (element.dashPattern[0] === element.dashPattern[1]) {
-                  lineStyle = 'dash'; // 等长虚线
-                } else {
-                  lineStyle = 'dashDot'; // 点划线
-                }
+                lineStyle = 'dash';
               } else if (element.dashPattern.length === 4) {
-                lineStyle = 'dashDotDot'; // 双点划线
+                lineStyle = 'dashDotDot';
               }
             }
 
@@ -264,18 +247,43 @@ window.onmessage = async (event) => {
             let beginArrowType = 'none';
             let endArrowType = 'none';
             
-            // 根据线条端点样式设置箭头
-            if (element.strokeCap === 'ARROW_LINES') {
-              endArrowType = 'arrow';
-            } else if (element.strokeCap === 'ARROW_EQUILATERAL') {
-              endArrowType = 'triangle';
+            // 检查是否为箭头
+            const name = element.name.toLowerCase();
+            const isArrow = element.type === 'LINE' || name.includes('arrow');
+            const isDoubleArrow = name.match(/double|bi|both|双向|两端/);
+
+            if (isArrow) {
+              // 设置默认箭头类型
+              let arrowType = 'arrow';
+              
+              // 根据名称设置特定箭头类型
+              if (name.includes('triangle')) {
+                arrowType = 'triangle';
+              } else if (name.includes('stealth')) {
+                arrowType = 'stealth';
+              } else if (name.includes('diamond')) {
+                arrowType = 'diamond';
+              } else if (name.includes('oval')) {
+                arrowType = 'oval';
+              }
+
+              // 根据strokeCap属性可能覆盖箭头类型
+              if (element.strokeCap === 'ARROW_EQUILATERAL') {
+                arrowType = 'triangle';
+              }
+
+              // 设置箭头
+              endArrowType = arrowType;
+              if (isDoubleArrow) {
+                beginArrowType = arrowType;
+              }
             }
 
             // 使用线条的实际起点和终点
-            const startX = element.startPoint.x / 72;
-            const startY = element.startPoint.y / 72;
-            const endX = element.endPoint.x / 72;
-            const endY = element.endPoint.y / 72;
+            const startX = element.startPoint ? element.startPoint.x / 72 : x;
+            const startY = element.startPoint ? element.startPoint.y / 72 : y;
+            const endX = element.endPoint ? element.endPoint.x / 72 : (x + w);
+            const endY = element.endPoint ? element.endPoint.y / 72 : (y + h);
 
             // 添加线条到PPT
             slide.addShape(pptx.shapes.LINE, {
@@ -287,9 +295,11 @@ window.onmessage = async (event) => {
               line: {
                 color: strokeColor,
                 transparency: 100 - strokeOpacity,
-                width: element.strokeWeight,
-                beginArrowType,
-                endArrowType,
+                width: element.strokeWeight || 1,
+                beginArrowType: beginArrowType,
+                endArrowType: endArrowType,
+                beginArrowSize: 'medium',
+                endArrowSize: 'medium',
                 dashType: lineStyle
               },
               flipH: endX < startX,
