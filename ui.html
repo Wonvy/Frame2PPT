@@ -57,13 +57,14 @@ window.onmessage = async (event) => {
 
           if (element.type === 'TEXT' && element.characters.trim()) {
             // 处理文本颜色
-            let textColor = '0,0,0';
+            let textColor = '000000';
+            let textOpacity = 100;
             if (element.fills && element.fills.length > 0) {
               const fill = element.fills[0];
               if (fill.type === 'SOLID') {
-                textColor = `${Math.round(fill.color.r * 255)},${Math.round(fill.color.g * 255)},${Math.round(fill.color.b * 255)}`;
+                textColor = `${Math.round(fill.color.r * 255).toString(16).padStart(2, '0')}${Math.round(fill.color.g * 255).toString(16).padStart(2, '0')}${Math.round(fill.color.b * 255).toString(16).padStart(2, '0')}`;
                 if ('opacity' in fill) {
-                  textColor += `,${Math.round(fill.opacity * 100)}`;
+                  textOpacity = Math.round(fill.opacity * 100);
                 }
               }
             }
@@ -81,23 +82,25 @@ window.onmessage = async (event) => {
               fontSize: Math.max(1, element.fontSize),
               fontFace: fullFontName,
               color: textColor,
+              transparency: 100 - textOpacity,
               bold: fontStyle.includes('Bold'),
               italic: fontStyle.includes('Italic'),
               align: convertTextAlign(element.textAlignHorizontal),
               valign: convertVerticalAlign(element.textAlignVertical),
               isTextBox: true,
               wrap: true,
-              fit: 'shrink'
+              fit: 'shrink',
+              name: element.name
             });
           }
           else if (element.type === 'SHAPE') {
             // 处理填充颜色
-            let fillColor = '255,255,255';
+            let fillColor = 'FFFFFF';
             let fillOpacity = 100;
             if (element.fills && element.fills.length > 0) {
               const fill = element.fills[0];
               if (fill.type === 'SOLID') {
-                fillColor = `${Math.round(fill.color.r * 255)},${Math.round(fill.color.g * 255)},${Math.round(fill.color.b * 255)}`;
+                fillColor = `${Math.round(fill.color.r * 255).toString(16).padStart(2, '0')}${Math.round(fill.color.g * 255).toString(16).padStart(2, '0')}${Math.round(fill.color.b * 255).toString(16).padStart(2, '0')}`;
                 if ('opacity' in fill) {
                   fillOpacity = Math.round(fill.opacity * 100);
                 }
@@ -107,13 +110,15 @@ window.onmessage = async (event) => {
             // 处理描边颜色
             let strokeColor = null;
             let strokeOpacity = 100;
+            let strokeWidth = 0;
             if (element.strokes && element.strokes.length > 0) {
               const stroke = element.strokes[0];
               if (stroke.type === 'SOLID') {
-                strokeColor = `${Math.round(stroke.color.r * 255)},${Math.round(stroke.color.g * 255)},${Math.round(stroke.color.b * 255)}`;
+                strokeColor = `${Math.round(stroke.color.r * 255).toString(16).padStart(2, '0')}${Math.round(stroke.color.g * 255).toString(16).padStart(2, '0')}${Math.round(stroke.color.b * 255).toString(16).padStart(2, '0')}`;
                 if ('opacity' in stroke) {
                   strokeOpacity = Math.round(stroke.opacity * 100);
                 }
+                strokeWidth = element.strokeWeight || 0;
               }
             }
 
@@ -129,23 +134,41 @@ window.onmessage = async (event) => {
               line: strokeColor ? {
                 color: strokeColor,
                 transparency: 100 - strokeOpacity,
-                pt: Math.max(0.25, element.strokeWeight || 0),
+                pt: Math.max(0.25, strokeWidth),
                 type: 'solid'
-              } : undefined
+              } : undefined,
+              name: element.name
             };
+
+            if (element.cornerRadius) {
+              shapeOptions.rectRadius = element.cornerRadius / 72;
+            }
 
             slide.addShape(pptx.shapes.RECTANGLE, shapeOptions);
           }
           else if (element.type === 'IMAGE') {
             try {
-              const imageBase64 = arrayBufferToBase64(element.imageBytes);
-              slide.addImage({
-                data: `data:image/png;base64,${imageBase64}`,
-                x,
-                y,
-                w,
-                h
-              });
+              // 确保图片数据是有效的
+              if (element.imageBytes && element.imageBytes.length > 0) {
+                const imageBase64 = arrayBufferToBase64(element.imageBytes);
+                
+                // 添加图片到幻灯片
+                slide.addImage({
+                  data: `data:image/png;base64,${imageBase64}`,
+                  x,
+                  y,
+                  w,
+                  h,
+                  sizing: {
+                    type: 'contain',
+                    w: w,
+                    h: h
+                  },
+                  name: element.name // 保持图层名称
+                });
+              } else {
+                console.warn(`Image data is missing for element: ${element.name}`);
+              }
             } catch (error) {
               console.error('Error adding image:', error);
             }
