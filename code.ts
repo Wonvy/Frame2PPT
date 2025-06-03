@@ -69,25 +69,180 @@ figma.showUI(__html__);
 // Calls to "parent.postMessage" from within the HTML page will trigger this
 // callback. The callback will be passed the "pluginMessage" property of the
 // posted message.
-figma.ui.onmessage = async (msg: {type: string, count?: number}) => {
-  // One way of distinguishing between different types of messages sent from
-  // your HTML page is to use an object with a "type" property like this.
-  if (msg.type === 'create-shapes' && msg.count !== undefined) {
-    // This plugin creates rectangles on the screen.
-    const numberOfRectangles = msg.count;
 
-    const nodes: SceneNode[] = [];
-    for (let i = 0; i < numberOfRectangles; i++) {
-      const rect = figma.createRectangle();
-      rect.x = i * 150;
-      rect.fills = [{ type: 'SOLID', color: { r: 1, g: 0.5, b: 0 } }];
-      figma.currentPage.appendChild(rect);
-      nodes.push(rect);
-    }
-    figma.currentPage.selection = nodes;
-    figma.viewport.scrollAndZoomIntoView(nodes);
+// 在文件开头添加一个全局变量来存储当前处理的Frame和元素
+let currentFrame: FrameNode;
+let currentElements: (TextElementData | ShapeElementData | ImageElementData)[] = [];
+
+async function processFrame(frame: FrameNode): Promise<ExportData> {
+  currentFrame = frame;
+  currentElements = [];
+  
+  // 处理Frame中的所有图层
+  for (const child of frame.children) {
+    await processNode(child);
   }
 
+  return {
+    name: frame.name,
+    width: frame.width,
+    height: frame.height,
+    elements: currentElements
+  };
+}
+
+async function processNode(node: SceneNode): Promise<void> {
+  // 计算相对于Frame的位置
+  const relativeX = node.absoluteTransform[0][2] - currentFrame.absoluteTransform[0][2];
+  const relativeY = node.absoluteTransform[1][2] - currentFrame.absoluteTransform[1][2];
+  
+  // 基本属性
+  const baseProps = {
+    name: node.name,
+    x: relativeX,
+    y: relativeY,
+    width: node.width,
+    height: node.height,
+    opacity: 'opacity' in node ? (node.opacity as number) : 1,
+    rotation: 'rotation' in node ? (node.rotation as number) : 0,
+    blendMode: 'blendMode' in node ? node.blendMode : 'NORMAL'
+  };
+
+  if (node.type === 'TEXT') {
+    const textNode = node as TextNode;
+    const fontSize = typeof textNode.fontSize === 'number' ? textNode.fontSize : 12;
+    
+    // 处理行高
+    let lineHeight: number | { value: number; unit: string };
+    if (typeof textNode.lineHeight === 'number') {
+      lineHeight = textNode.lineHeight;
+    } else if (textNode.lineHeight && typeof textNode.lineHeight === 'object' && 'value' in (textNode.lineHeight as any)) {
+      const lh = textNode.lineHeight as { value: number; unit: string };
+      lineHeight = {
+        value: lh.value,
+        unit: lh.unit
+      };
+    } else {
+      lineHeight = { value: fontSize, unit: 'PIXELS' };
+    }
+
+    // 处理字间距
+    let letterSpacing: number | { value: number; unit: string };
+    if (typeof textNode.letterSpacing === 'number') {
+      letterSpacing = textNode.letterSpacing;
+    } else if (textNode.letterSpacing && typeof textNode.letterSpacing === 'object' && 'value' in (textNode.letterSpacing as any)) {
+      const ls = textNode.letterSpacing as { value: number; unit: string };
+      letterSpacing = {
+        value: ls.value,
+        unit: ls.unit
+      };
+    } else {
+      letterSpacing = { value: 0, unit: 'PIXELS' };
+    }
+
+    const textElement: TextElementData = {
+      ...baseProps,
+      type: 'TEXT',
+      characters: textNode.characters,
+      fontSize: fontSize,
+      fontName: typeof textNode.fontName === 'symbol' ? { family: 'Arial', style: 'Regular' } : textNode.fontName,
+      textAlignHorizontal: textNode.textAlignHorizontal,
+      textAlignVertical: textNode.textAlignVertical,
+      fills: Array.isArray(textNode.fills) ? [...textNode.fills] : [],
+      lineHeight,
+      letterSpacing,
+      textCase: typeof textNode.textCase === 'string' ? textNode.textCase : 'ORIGINAL',
+      textDecoration: typeof textNode.textDecoration === 'string' ? textNode.textDecoration : 'NONE',
+      paragraphIndent: textNode.paragraphIndent || 0,
+      paragraphSpacing: textNode.paragraphSpacing || 0,
+      textAutoResize: textNode.textAutoResize
+    };
+    currentElements.push(textElement);
+  } 
+  else if ('fills' in node && 'strokes' in node && 'strokeWeight' in node) {
+    // 检查是否包含图片填充
+    const nodeWithFills = node as SceneNode & { fills: readonly Paint[] };
+    const imageFill = Array.isArray(nodeWithFills.fills) ? 
+      nodeWithFills.fills.find(fill => fill.type === 'IMAGE') : 
+      null;
+
+    if (imageFill && imageFill.type === 'IMAGE' && imageFill.imageHash) {
+      try {
+        // 导出图片数据
+        const bytes = await node.exportAsync({
+          format: 'PNG',
+          constraint: { type: 'SCALE', value: 2 }
+        });
+
+        const imageElement: ImageElementData = {
+          ...baseProps,
+          type: 'IMAGE',
+          imageHash: imageFill.imageHash,
+          imageBytes: bytes,
+          scaleMode: 'FILL'
+        };
+        currentElements.push(imageElement);
+      } catch (error) {
+        console.error('Error exporting image:', error);
+        // 如果图片导出失败，作为形状处理
+        const geometryNode = node as GeometryMixin;
+        const strokeWeight = typeof geometryNode.strokeWeight === 'number' ? geometryNode.strokeWeight : 0;
+        
+        // 处理圆角
+        let cornerRadius: number | undefined = undefined;
+        if ('cornerRadius' in node) {
+          const radius = (node as RectangleNode).cornerRadius;
+          if (typeof radius === 'number') {
+            cornerRadius = radius;
+          }
+        }
+
+        const shapeElement: ShapeElementData = {
+          ...baseProps,
+          type: 'SHAPE',
+          fills: Array.isArray(nodeWithFills.fills) ? [...nodeWithFills.fills] : [],
+          strokes: Array.isArray(geometryNode.strokes) ? [...geometryNode.strokes] : [],
+          strokeWeight,
+          cornerRadius
+        };
+        currentElements.push(shapeElement);
+      }
+    } else {
+      // 不是图片，作为普通形状处理
+      const geometryNode = node as GeometryMixin;
+      const strokeWeight = typeof geometryNode.strokeWeight === 'number' ? geometryNode.strokeWeight : 0;
+      
+      // 处理圆角
+      let cornerRadius: number | undefined = undefined;
+      if ('cornerRadius' in node) {
+        const radius = (node as RectangleNode).cornerRadius;
+        if (typeof radius === 'number') {
+          cornerRadius = radius;
+        }
+      }
+
+      const shapeElement: ShapeElementData = {
+        ...baseProps,
+        type: 'SHAPE',
+        fills: Array.isArray(nodeWithFills.fills) ? [...nodeWithFills.fills] : [],
+        strokes: Array.isArray(geometryNode.strokes) ? [...geometryNode.strokes] : [],
+        strokeWeight,
+        cornerRadius
+      };
+      currentElements.push(shapeElement);
+    }
+  }
+
+  // 递归处理子节点
+  if ('children' in node) {
+    for (const child of node.children) {
+      await processNode(child);
+    }
+  }
+}
+
+// 修改主导出函数
+figma.ui.onmessage = async (msg: {type: string, count?: number}) => {
   if (msg.type === 'export-to-ppt') {
     const selection = figma.currentPage.selection;
     
@@ -97,7 +252,7 @@ figma.ui.onmessage = async (msg: {type: string, count?: number}) => {
     }
 
     try {
-      const frames = selection.filter(node => node.type === 'FRAME');
+      const frames = selection.filter(node => node.type === 'FRAME') as FrameNode[];
       
       if (frames.length === 0) {
         figma.notify('请选择至少一个Frame进行导出');
@@ -110,170 +265,7 @@ figma.ui.onmessage = async (msg: {type: string, count?: number}) => {
         height: firstFrame.height
       };
 
-      const exportPromises = frames.map(async (frame) => {
-        const elements: (TextElementData | ShapeElementData | ImageElementData)[] = [];
-        
-        async function processNode(node: SceneNode, parentX = 0, parentY = 0): Promise<void> {
-          // 计算相对于Frame的位置
-          const absoluteX = parentX + node.x;
-          const absoluteY = parentY + node.y;
-          
-          // 基本属性
-          const baseProps = {
-            name: node.name,
-            x: absoluteX,
-            y: absoluteY,
-            width: node.width,
-            height: node.height,
-            opacity: 'opacity' in node ? (node.opacity as number) : 1,
-            rotation: 'rotation' in node ? (node.rotation as number) : 0,
-            blendMode: 'blendMode' in node ? node.blendMode : 'NORMAL'
-          };
-
-          if (node.type === 'TEXT') {
-            const textNode = node as TextNode;
-            const fontSize = typeof textNode.fontSize === 'number' ? textNode.fontSize : 12;
-            
-            // 处理行高
-            let lineHeight: number | { value: number; unit: string };
-            if (typeof textNode.lineHeight === 'number') {
-              lineHeight = textNode.lineHeight;
-            } else if (textNode.lineHeight && typeof textNode.lineHeight === 'object' && 'value' in (textNode.lineHeight as any)) {
-              const lh = textNode.lineHeight as { value: number; unit: string };
-              lineHeight = {
-                value: lh.value,
-                unit: lh.unit
-              };
-            } else {
-              lineHeight = { value: fontSize, unit: 'PIXELS' };
-            }
-
-            // 处理字间距
-            let letterSpacing: number | { value: number; unit: string };
-            if (typeof textNode.letterSpacing === 'number') {
-              letterSpacing = textNode.letterSpacing;
-            } else if (textNode.letterSpacing && typeof textNode.letterSpacing === 'object' && 'value' in (textNode.letterSpacing as any)) {
-              const ls = textNode.letterSpacing as { value: number; unit: string };
-              letterSpacing = {
-                value: ls.value,
-                unit: ls.unit
-              };
-            } else {
-              letterSpacing = { value: 0, unit: 'PIXELS' };
-            }
-
-            const textElement: TextElementData = {
-              ...baseProps,
-              type: 'TEXT',
-              characters: textNode.characters,
-              fontSize: fontSize,
-              fontName: typeof textNode.fontName === 'symbol' ? { family: 'Arial', style: 'Regular' } : textNode.fontName,
-              textAlignHorizontal: textNode.textAlignHorizontal,
-              textAlignVertical: textNode.textAlignVertical,
-              fills: Array.isArray(textNode.fills) ? [...textNode.fills] : [],
-              lineHeight,
-              letterSpacing,
-              textCase: typeof textNode.textCase === 'string' ? textNode.textCase : 'ORIGINAL',
-              textDecoration: typeof textNode.textDecoration === 'string' ? textNode.textDecoration : 'NONE',
-              paragraphIndent: textNode.paragraphIndent || 0,
-              paragraphSpacing: textNode.paragraphSpacing || 0,
-              textAutoResize: textNode.textAutoResize
-            };
-            elements.push(textElement);
-          } 
-          else if ('fills' in node && 'strokes' in node && 'strokeWeight' in node) {
-            // 检查是否包含图片填充
-            const nodeWithFills = node as SceneNode & { fills: readonly Paint[] };
-            const imageFill = Array.isArray(nodeWithFills.fills) ? 
-              nodeWithFills.fills.find(fill => fill.type === 'IMAGE') : 
-              null;
-
-            if (imageFill && imageFill.type === 'IMAGE' && imageFill.imageHash) {
-              try {
-                // 导出图片数据
-                const bytes = await node.exportAsync({
-                  format: 'PNG',
-                  constraint: { type: 'SCALE', value: 2 }
-                });
-
-                const imageElement: ImageElementData = {
-                  ...baseProps,
-                  type: 'IMAGE',
-                  imageHash: imageFill.imageHash,
-                  imageBytes: bytes,
-                  scaleMode: 'FILL'
-                };
-                elements.push(imageElement);
-              } catch (error) {
-                console.error('Error exporting image:', error);
-                // 如果图片导出失败，作为形状处理
-                const geometryNode = node as GeometryMixin;
-                const strokeWeight = typeof geometryNode.strokeWeight === 'number' ? geometryNode.strokeWeight : 0;
-                
-                // 处理圆角
-                let cornerRadius: number | undefined = undefined;
-                if ('cornerRadius' in node) {
-                  const radius = (node as RectangleNode).cornerRadius;
-                  if (typeof radius === 'number') {
-                    cornerRadius = radius;
-                  }
-                }
-
-                const shapeElement: ShapeElementData = {
-                  ...baseProps,
-                  type: 'SHAPE',
-                  fills: Array.isArray(nodeWithFills.fills) ? [...nodeWithFills.fills] : [],
-                  strokes: Array.isArray(geometryNode.strokes) ? [...geometryNode.strokes] : [],
-                  strokeWeight,
-                  cornerRadius
-                };
-                elements.push(shapeElement);
-              }
-            } else {
-              // 不是图片，作为普通形状处理
-              const geometryNode = node as GeometryMixin;
-              const strokeWeight = typeof geometryNode.strokeWeight === 'number' ? geometryNode.strokeWeight : 0;
-              
-              // 处理圆角
-              let cornerRadius: number | undefined = undefined;
-              if ('cornerRadius' in node) {
-                const radius = (node as RectangleNode).cornerRadius;
-                if (typeof radius === 'number') {
-                  cornerRadius = radius;
-                }
-              }
-
-              const shapeElement: ShapeElementData = {
-                ...baseProps,
-                type: 'SHAPE',
-                fills: Array.isArray(nodeWithFills.fills) ? [...nodeWithFills.fills] : [],
-                strokes: Array.isArray(geometryNode.strokes) ? [...geometryNode.strokes] : [],
-                strokeWeight,
-                cornerRadius
-              };
-              elements.push(shapeElement);
-            }
-          }
-
-          // 递归处理子节点
-          if ('children' in node) {
-            for (const child of node.children) {
-              await processNode(child, absoluteX, absoluteY);
-            }
-          }
-        }
-
-        // 处理frame中的所有图层
-        await processNode(frame);
-
-        return {
-          name: frame.name,
-          width: frame.width,
-          height: frame.height,
-          elements: elements
-        };
-      });
-
+      const exportPromises = frames.map(frame => processFrame(frame));
       const exportedFrames = await Promise.all(exportPromises);
       
       figma.ui.postMessage({
@@ -288,8 +280,6 @@ figma.ui.onmessage = async (msg: {type: string, count?: number}) => {
     }
   }
 
-  // Make sure to close the plugin when you're done. Otherwise the plugin will
-  // keep running, which shows the cancel button at the bottom of the screen.
   if (msg.type === 'cancel') {
     figma.closePlugin();
   }

@@ -56,9 +56,17 @@ window.onmessage = async (event) => {
           const h = Math.max(0.1, element.height / 72);
 
           if (element.type === 'TEXT' && element.characters.trim()) {
-            const textColor = element.fills[0]?.type === 'SOLID' 
-              ? `${Math.round(element.fills[0].color.r * 255)},${Math.round(element.fills[0].color.g * 255)},${Math.round(element.fills[0].color.b * 255)}`
-              : '0,0,0';
+            // 处理文本颜色
+            let textColor = '0,0,0';
+            if (element.fills && element.fills.length > 0) {
+              const fill = element.fills[0];
+              if (fill.type === 'SOLID') {
+                textColor = `${Math.round(fill.color.r * 255)},${Math.round(fill.color.g * 255)},${Math.round(fill.color.b * 255)}`;
+                if ('opacity' in fill) {
+                  textColor += `,${Math.round(fill.opacity * 100)}`;
+                }
+              }
+            }
 
             // 处理字体名称
             const fontName = element.fontName.family;
@@ -83,25 +91,50 @@ window.onmessage = async (event) => {
             });
           }
           else if (element.type === 'SHAPE') {
-            const fillColor = element.fills[0]?.type === 'SOLID'
-              ? `${Math.round(element.fills[0].color.r * 255)},${Math.round(element.fills[0].color.g * 255)},${Math.round(element.fills[0].color.b * 255)}`
-              : '255,255,255';
+            // 处理填充颜色
+            let fillColor = '255,255,255';
+            let fillOpacity = 100;
+            if (element.fills && element.fills.length > 0) {
+              const fill = element.fills[0];
+              if (fill.type === 'SOLID') {
+                fillColor = `${Math.round(fill.color.r * 255)},${Math.round(fill.color.g * 255)},${Math.round(fill.color.b * 255)}`;
+                if ('opacity' in fill) {
+                  fillOpacity = Math.round(fill.opacity * 100);
+                }
+              }
+            }
 
-            const strokeColor = element.strokes[0]?.type === 'SOLID'
-              ? `${Math.round(element.strokes[0].color.r * 255)},${Math.round(element.strokes[0].color.g * 255)},${Math.round(element.strokes[0].color.b * 255)}`
-              : null;
+            // 处理描边颜色
+            let strokeColor = null;
+            let strokeOpacity = 100;
+            if (element.strokes && element.strokes.length > 0) {
+              const stroke = element.strokes[0];
+              if (stroke.type === 'SOLID') {
+                strokeColor = `${Math.round(stroke.color.r * 255)},${Math.round(stroke.color.g * 255)},${Math.round(stroke.color.b * 255)}`;
+                if ('opacity' in stroke) {
+                  strokeOpacity = Math.round(stroke.opacity * 100);
+                }
+              }
+            }
 
-            slide.addShape(pptx.shapes.RECTANGLE, {
+            const shapeOptions = {
               x,
               y,
               w,
               h,
-              fill: { color: fillColor },
+              fill: { 
+                color: fillColor,
+                transparency: 100 - fillOpacity
+              },
               line: strokeColor ? {
                 color: strokeColor,
-                pt: Math.max(0.25, element.strokeWeight || 0)
+                transparency: 100 - strokeOpacity,
+                pt: Math.max(0.25, element.strokeWeight || 0),
+                type: 'solid'
               } : undefined
-            });
+            };
+
+            slide.addShape(pptx.shapes.RECTANGLE, shapeOptions);
           }
           else if (element.type === 'IMAGE') {
             try {
