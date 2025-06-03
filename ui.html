@@ -55,6 +55,15 @@ window.onmessage = async (event) => {
           const w = Math.max(0.1, element.width / 72);
           const h = Math.max(0.1, element.height / 72);
 
+          // 基本选项，所有元素都会用到
+          const baseOptions = {
+            x,
+            y,
+            w,
+            h,
+            objectName: element.name // 使用objectName来设置PPT中的图层名称
+          };
+
           if (element.type === 'TEXT' && element.characters.trim()) {
             // 处理文本颜色
             let textColor = '000000';
@@ -75,10 +84,7 @@ window.onmessage = async (event) => {
             const fullFontName = fontStyle === 'Regular' ? fontName : `${fontName} ${fontStyle}`;
 
             slide.addText(element.characters, {
-              x,
-              y,
-              w,
-              h,
+              ...baseOptions,
               fontSize: Math.max(1, element.fontSize),
               fontFace: fullFontName,
               color: textColor,
@@ -89,8 +95,7 @@ window.onmessage = async (event) => {
               valign: convertVerticalAlign(element.textAlignVertical),
               isTextBox: true,
               wrap: true,
-              fit: 'shrink',
-              name: element.name
+              fit: 'shrink'
             });
           }
           else if (element.type === 'SHAPE') {
@@ -123,10 +128,7 @@ window.onmessage = async (event) => {
             }
 
             const shapeOptions = {
-              x,
-              y,
-              w,
-              h,
+              ...baseOptions,
               fill: { 
                 color: fillColor,
                 transparency: 100 - fillOpacity
@@ -136,12 +138,11 @@ window.onmessage = async (event) => {
                 transparency: 100 - strokeOpacity,
                 pt: Math.max(0.25, strokeWidth),
                 type: 'solid'
-              } : undefined,
-              name: element.name
+              } : undefined
             };
 
             if (element.cornerRadius) {
-              shapeOptions.rectRadius = element.cornerRadius / 72;
+              shapeOptions.rectRadius = element.cornerRadius / 72; // 转换为英寸
             }
 
             slide.addShape(pptx.shapes.RECTANGLE, shapeOptions);
@@ -154,17 +155,13 @@ window.onmessage = async (event) => {
                 
                 // 添加图片到幻灯片
                 slide.addImage({
+                  ...baseOptions,
                   data: `data:image/png;base64,${imageBase64}`,
-                  x,
-                  y,
-                  w,
-                  h,
                   sizing: {
                     type: 'contain',
                     w: w,
                     h: h
-                  },
-                  name: element.name // 保持图层名称
+                  }
                 });
               } else {
                 console.warn(`Image data is missing for element: ${element.name}`);
