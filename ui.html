@@ -83,7 +83,30 @@ window.onmessage = async (event) => {
             const fontStyle = element.fontName.style;
             const fullFontName = fontStyle === 'Regular' ? fontName : `${fontName} ${fontStyle}`;
 
-            slide.addText(element.characters, {
+            // 处理文本大小写
+            let processedText = element.characters;
+            switch (element.textCase) {
+              case 'UPPER':
+                processedText = processedText.toUpperCase();
+                break;
+              case 'LOWER':
+                processedText = processedText.toLowerCase();
+                break;
+              case 'TITLE':
+                processedText = processedText.split(' ')
+                  .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                  .join(' ');
+                break;
+              case 'SMALL_CAPS':
+                processedText = processedText.toUpperCase();
+                break;
+              case 'SMALL_CAPS_FORCED':
+                processedText = processedText.toUpperCase();
+                break;
+              // 'ORIGINAL' 和其他情况保持原样
+            }
+
+            slide.addText(processedText, {
               ...baseOptions,
               fontSize: Math.max(1, element.fontSize),
               fontFace: fullFontName,
