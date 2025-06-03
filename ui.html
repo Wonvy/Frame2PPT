@@ -65,6 +65,9 @@ window.onmessage = async (event) => {
           };
 
           if (element.type === 'TEXT' && element.characters.trim()) {
+            // 检查是否为单行文本
+            const isSingleLine = !element.characters.includes('\n');
+
             // 处理文本颜色
             let textColor = '000000';
             let textOpacity = 100;
@@ -106,7 +109,8 @@ window.onmessage = async (event) => {
               // 'ORIGINAL' 和其他情况保持原样
             }
 
-            slide.addText(processedText, {
+            // 创建文本框选项
+            const textOptions = {
               ...baseOptions,
               fontSize: Math.max(1, element.fontSize),
               fontFace: fullFontName,
@@ -117,9 +121,20 @@ window.onmessage = async (event) => {
               align: convertTextAlign(element.textAlignHorizontal),
               valign: convertVerticalAlign(element.textAlignVertical),
               isTextBox: true,
-              wrap: true,
-              fit: 'shrink'
-            });
+              fit: 'shrink',
+              autoFit: false // 禁用自动调整大小
+            };
+
+            // 根据是否为单行文本设置换行属性
+            if (isSingleLine) {
+              textOptions.wrap = false;
+              // 增加文本框宽度以确保文本不会被截断
+              textOptions.w = Math.max(textOptions.w, w * 1.1); // 增加10%的宽度
+            } else {
+              textOptions.wrap = true;
+            }
+
+            slide.addText(processedText, textOptions);
           }
           else if (element.type === 'SHAPE') {
             // 处理填充颜色
