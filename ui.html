@@ -179,11 +179,34 @@ window.onmessage = async (event) => {
               } : undefined
             };
 
-            if (element.cornerRadius) {
-              shapeOptions.rectRadius = element.cornerRadius / 72; // 转换为英寸
+            // 根据形状类型选择对应的PPT形状
+            let shapeType = pptx.shapes.RECTANGLE;
+            
+            // 根据Figma的形状类型选择对应的PPT形状
+            switch (element.shapeType) {
+              case 'ELLIPSE':
+                shapeType = pptx.shapes.OVAL;
+                break;
+              case 'POLYGON':
+                // 对于多边形，我们使用正八边形作为替代
+                shapeType = pptx.shapes.OCTAGON;
+                break;
+              case 'STAR':
+                shapeType = pptx.shapes.STAR;
+                break;
+              default:
+                // 检查是否为圆形（通过宽高比和cornerRadius判断）
+                if (Math.abs(element.width - element.height) < 1 && (!element.cornerRadius || element.cornerRadius >= element.width / 2)) {
+                  shapeType = pptx.shapes.OVAL;
+                }
+                // 如果有圆角但不是圆形
+                else if (element.cornerRadius) {
+                  shapeOptions.rectRadius = element.cornerRadius / 72; // 转换为英寸
+                }
+                break;
             }
 
-            slide.addShape(pptx.shapes.RECTANGLE, shapeOptions);
+            slide.addShape(shapeType, shapeOptions);
           }
           else if (element.type === 'IMAGE') {
             try {

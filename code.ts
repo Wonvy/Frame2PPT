@@ -54,6 +54,7 @@ interface ShapeElementData extends ElementData {
   strokes: Paint[];
   strokeWeight: number;
   cornerRadius?: number;
+  shapeType?: string;
 }
 
 interface ImageElementData extends ElementData {
@@ -390,13 +391,24 @@ async function processAsShape(node: SceneNode, baseProps: any) {
     }
   }
 
+  // 确定形状类型
+  let shapeType = 'RECTANGLE';
+  if (node.type === 'ELLIPSE') {
+    shapeType = 'ELLIPSE';
+  } else if (node.type === 'POLYGON') {
+    shapeType = 'POLYGON';
+  } else if (node.type === 'STAR') {
+    shapeType = 'STAR';
+  }
+
   const shapeElement: ShapeElementData = {
     ...baseProps,
     type: 'SHAPE',
     fills: Array.isArray(node.fills) ? [...node.fills] : [],
     strokes: Array.isArray(geometryNode.strokes) ? [...geometryNode.strokes] : [],
     strokeWeight,
-    cornerRadius
+    cornerRadius,
+    shapeType
   };
   currentElements.push(shapeElement);
 }
