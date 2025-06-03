@@ -63,6 +63,17 @@ interface ImageElementData extends ElementData {
   scaleMode?: string;
 }
 
+interface LineElementData extends ElementData {
+  type: 'LINE';
+  strokeWeight: number;
+  strokes: Paint[];
+  strokeCap?: StrokeCap;
+  strokeJoin?: StrokeJoin;
+  dashPattern?: readonly number[];
+  startPoint: { x: number; y: number };
+  endPoint: { x: number; y: number };
+}
+
 // This shows the HTML page in "ui.html".
 figma.showUI(__html__);
 
@@ -72,7 +83,7 @@ figma.showUI(__html__);
 
 // 在文件开头添加一个全局变量来存储当前处理的Frame和元素
 let currentFrame: FrameNode;
-let currentElements: (TextElementData | ShapeElementData | ImageElementData)[] = [];
+let currentElements: (TextElementData | ShapeElementData | ImageElementData | LineElementData)[] = [];
 
 async function processFrame(frame: FrameNode): Promise<ExportData> {
   currentFrame = frame;
@@ -246,7 +257,37 @@ async function processNode(node: SceneNode): Promise<void> {
       return;
     }
 
-    case 'VECTOR':
+    case 'LINE': {
+      const lineNode = node as LineNode;
+      const strokeWeight = typeof lineNode.strokeWeight === 'number' ? lineNode.strokeWeight : 1;
+
+      // 计算线条的起点和终点（相对于Frame）
+      const startX = lineNode.x;
+      const startY = lineNode.y;
+      const endX = startX + lineNode.width;
+      const endY = startY + lineNode.height;
+
+      const lineElement: LineElementData = {
+        ...baseProps,
+        type: 'LINE',
+        strokeWeight: strokeWeight,
+        strokes: Array.isArray(lineNode.strokes) ? [...lineNode.strokes] : [],
+        strokeCap: typeof lineNode.strokeCap !== 'symbol' ? lineNode.strokeCap : 'NONE',
+        strokeJoin: typeof lineNode.strokeJoin !== 'symbol' ? lineNode.strokeJoin : 'MITER',
+        dashPattern: lineNode.dashPattern,
+        startPoint: {
+          x: startX,
+          y: startY
+        },
+        endPoint: {
+          x: endX,
+          y: endY
+        }
+      };
+      currentElements.push(lineElement);
+      return;
+    }
+
     case 'STAR':
     case 'POLYGON': {
       try {

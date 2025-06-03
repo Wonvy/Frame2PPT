@@ -193,6 +193,71 @@ window.onmessage = async (event) => {
               console.error('Error adding image:', error);
             }
           }
+          else if (element.type === 'LINE') {
+            // 处理线条颜色和透明度
+            let strokeColor = '000000';
+            let strokeOpacity = 100;
+            if (element.strokes && element.strokes.length > 0) {
+              const stroke = element.strokes[0];
+              if (stroke.type === 'SOLID') {
+                strokeColor = `${Math.round(stroke.color.r * 255).toString(16).padStart(2, '0')}${Math.round(stroke.color.g * 255).toString(16).padStart(2, '0')}${Math.round(stroke.color.b * 255).toString(16).padStart(2, '0')}`;
+                if ('opacity' in stroke) {
+                  strokeOpacity = Math.round(stroke.opacity * 100);
+                }
+              }
+            }
+
+            // 处理线条样式
+            let lineStyle = 'solid';
+            if (element.dashPattern && element.dashPattern.length > 0) {
+              // 根据虚线模式选择合适的PPT线条样式
+              if (element.dashPattern.length === 2) {
+                if (element.dashPattern[0] === element.dashPattern[1]) {
+                  lineStyle = 'dash'; // 等长虚线
+                } else {
+                  lineStyle = 'dashDot'; // 点划线
+                }
+              } else if (element.dashPattern.length === 4) {
+                lineStyle = 'dashDotDot'; // 双点划线
+              }
+            }
+
+            // 处理箭头
+            let beginArrowType = 'none';
+            let endArrowType = 'none';
+            
+            // 根据线条端点样式设置箭头
+            if (element.strokeCap === 'ARROW_LINES') {
+              endArrowType = 'arrow';
+            } else if (element.strokeCap === 'ARROW_EQUILATERAL') {
+              endArrowType = 'triangle';
+            }
+
+            // 使用线条的实际起点和终点
+            const startX = element.startPoint.x / 72;
+            const startY = element.startPoint.y / 72;
+            const endX = element.endPoint.x / 72;
+            const endY = element.endPoint.y / 72;
+
+            // 添加线条到PPT
+            slide.addShape(pptx.shapes.LINE, {
+              ...baseOptions,
+              x: startX,
+              y: startY,
+              w: Math.abs(endX - startX),
+              h: Math.abs(endY - startY),
+              line: {
+                color: strokeColor,
+                transparency: 100 - strokeOpacity,
+                width: element.strokeWeight,
+                beginArrowType,
+                endArrowType,
+                dashType: lineStyle
+              },
+              flipH: endX < startX,
+              flipV: endY < startY
+            });
+          }
         }
       }
       
