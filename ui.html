@@ -34,11 +34,9 @@ window.onmessage = async (event) => {
       
       // 设置PPT尺寸比例
       const { width, height } = message.aspectRatio;
-      // 将像素转换为英寸（1英寸 = 72像素）
-      const widthInches = width / 72;
-      const heightInches = height / 72;
+      const widthInches = Math.max(1, width / 72);
+      const heightInches = Math.max(1, height / 72);
       
-      // 设置自定义幻灯片大小
       pptx.defineLayout({ 
         name: 'CUSTOM',
         width: widthInches,
@@ -50,53 +48,78 @@ window.onmessage = async (event) => {
       for (const frameData of message.data) {
         const slide = pptx.addSlide();
         
-        // 将二进制图片数据转换为base64
-        const base64Image = arrayBufferToBase64(frameData.bytes);
-        
-        // 添加背景图片
-        slide.addImage({
-          data: `data:image/png;base64,${base64Image}`,
-          x: 0,
-          y: 0,
-          w: '100%',
-          h: '100%'
-        });
+        // 处理每个元素
+        for (const element of frameData.elements) {
+          const x = Math.max(0, element.x / 72);
+          const y = Math.max(0, element.y / 72);
+          const w = Math.max(0.1, element.width / 72);
+          const h = Math.max(0.1, element.height / 72);
 
-        // 添加文本元素
-        for (const textNode of frameData.textNodes) {
-          // 转换颜色格式
-          const textColor = textNode.fills[0]?.type === 'SOLID' 
-            ? { 
-                r: Math.round(textNode.fills[0].color.r * 255),
-                g: Math.round(textNode.fills[0].color.g * 255),
-                b: Math.round(textNode.fills[0].color.b * 255)
-              }
-            : { r: 0, g: 0, b: 0 };
+          if (element.type === 'TEXT' && element.characters.trim()) {
+            const textColor = element.fills[0]?.type === 'SOLID' 
+              ? `${Math.round(element.fills[0].color.r * 255)},${Math.round(element.fills[0].color.g * 255)},${Math.round(element.fills[0].color.b * 255)}`
+              : '0,0,0';
 
-          // 将位置和尺寸从像素转换为英寸
-          const x = textNode.x / 72;
-          const y = textNode.y / 72;
-          const w = textNode.width / 72;
-          const h = textNode.height / 72;
+            // 处理字体名称
+            const fontName = element.fontName.family;
+            const fontStyle = element.fontName.style;
+            const fullFontName = fontStyle === 'Regular' ? fontName : `${fontName} ${fontStyle}`;
 
-          slide.addText(textNode.characters, {
-            x: x,
-            y: y,
-            w: w,
-            h: h,
-            fontSize: textNode.fontSize,
-            fontFace: textNode.fontName.family,
-            bold: textNode.fontName.style.includes('Bold'),
-            italic: textNode.fontName.style.includes('Italic'),
-            align: convertTextAlign(textNode.textAlignHorizontal),
-            valign: convertVerticalAlign(textNode.textAlignVertical),
-            color: `${textColor.r},${textColor.g},${textColor.b}`,
-            isTextBox: true
-          });
+            slide.addText(element.characters, {
+              x,
+              y,
+              w,
+              h,
+              fontSize: Math.max(1, element.fontSize),
+              fontFace: fullFontName,
+              color: textColor,
+              bold: fontStyle.includes('Bold'),
+              italic: fontStyle.includes('Italic'),
+              align: convertTextAlign(element.textAlignHorizontal),
+              valign: convertVerticalAlign(element.textAlignVertical),
+              isTextBox: true,
+              wrap: true,
+              fit: 'shrink'
+            });
+          }
+          else if (element.type === 'SHAPE') {
+            const fillColor = element.fills[0]?.type === 'SOLID'
+              ? `${Math.round(element.fills[0].color.r * 255)},${Math.round(element.fills[0].color.g * 255)},${Math.round(element.fills[0].color.b * 255)}`
+              : '255,255,255';
+
+            const strokeColor = element.strokes[0]?.type === 'SOLID'
+              ? `${Math.round(element.strokes[0].color.r * 255)},${Math.round(element.strokes[0].color.g * 255)},${Math.round(element.strokes[0].color.b * 255)}`
+              : null;
+
+            slide.addShape(pptx.shapes.RECTANGLE, {
+              x,
+              y,
+              w,
+              h,
+              fill: { color: fillColor },
+              line: strokeColor ? {
+                color: strokeColor,
+                pt: Math.max(0.25, element.strokeWeight || 0)
+              } : undefined
+            });
+          }
+          else if (element.type === 'IMAGE') {
+            try {
+              const imageBase64 = arrayBufferToBase64(element.imageBytes);
+              slide.addImage({
+                data: `data:image/png;base64,${imageBase64}`,
+                x,
+                y,
+                w,
+                h
+              });
+            } catch (error) {
+              console.error('Error adding image:', error);
+            }
+          }
         }
       }
       
-      // 保存PPT文件
       await pptx.writeFile('FigmaExport.pptx');
     } catch (error) {
       console.error('PPT生成错误:', error);
@@ -105,7 +128,6 @@ window.onmessage = async (event) => {
   }
 };
 
-// 辅助函数：将ArrayBuffer转换为base64
 function arrayBufferToBase64(buffer) {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -115,7 +137,6 @@ function arrayBufferToBase64(buffer) {
   return window.btoa(binary);
 }
 
-// 辅助函数：转换文本对齐方式
 function convertTextAlign(figmaAlign) {
   const alignMap = {
     'LEFT': 'left',
@@ -126,7 +147,6 @@ function convertTextAlign(figmaAlign) {
   return alignMap[figmaAlign] || 'left';
 }
 
-// 辅助函数：转换垂直对齐方式
 function convertVerticalAlign(figmaAlign) {
   const alignMap = {
     'TOP': 'top',
